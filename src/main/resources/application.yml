@@ -1,6 +1,6 @@
 spring:
   application:
-    name: ${COLLECTOR_SERVICE_NAME:em-collector}
+    name: ${SERVICE_NAME:em-collector}
 
   docker:
     compose:
@@ -8,31 +8,31 @@ spring:
 
 
 server:
-  port: ${SERVER_PORT:8081}
+  port: ${SERVER_PORT:8080}
 
 
 management:
   server:
-    port: ${ACTUATOR_PORT:8181}
+    port: ${ACTUATOR_PORT:8081}
   endpoints:
     web:
       exposure:
-        include: ${ACTUATOR_ENDPOINTS:health,info,metrics,prometheus}  # Список доступных эндпоинтов
+        include: ${ACTUATOR_ENDPOINTS:health,info,metrics,prometheus}                           # Список доступных эндпоинтов
   endpoint:
     health:
-      show-details: ${HEALTH_DETAILS_VISIBLE:always}  # Детализация информации о здоровье сервиса
+      show-details: ${HEALTH_DETAILS_VISIBLE:always}                                            # Детализация информации о здоровье сервиса
 
 
 eureka:
   client:
-    register-with-eureka: ${EUREKA_REGISTER_ENABLED:true}  # Регистрируем сервис в Eureka
-    fetch-registry: ${EUREKA_FETCH_ENABLED:true}  # Загружаем список зарегистрированных сервисов
-    service-url:
-      defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULT_ZONE:http://localhost:8761/eureka/}  # URL-адрес реестра Eureka
+    register-with-eureka: ${EUREKA_REGISTER_ENABLED:true}                                       # Регистрируем сервис в Eureka
+    fetch-registry: ${EUREKA_FETCH_ENABLED:true}                                                # Загружаем список зарегистрированных сервисов
+    serviceUrl:
+      defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULT_ZONE:http://em-discovery:8761/eureka/}   # URL-адрес реестра Eureka
   instance:
-    prefer-ip-address: ${EUREKA_PREFER_IP:false}  # Используем хостнейм вместо IP
-    instance-id: ${EUREKA_INSTANCE_HOSTNAME:localhost}:${server.port}:${random.uuid}  # Уникальный идентификатор инстанса
-    lease-renewal-interval-in-seconds: ${EUREKA_HEARTBEAT_INTERVAL:30}  # Частота отправки heartbeat
-    lease-expiration-duration-in-seconds: ${EUREKA_LEASE_EXPIRATION:90}  # Время, через которое инстанс будет считаться недоступным
-    health-check-url-path: ${EUREKA_HEALTH_CHECK_PATH:/actuator/health}  # URL для проверки состояния
-    status-page-url-path: ${EUREKA_STATUS_PAGE_PATH:/actuator/info}  # URL страницы статуса
+    prefer-ip-address: ${EUREKA_PREFER_IP:false}                                                # Используем хостнейм вместо IP
+    instance-id: ${EUREKA_INSTANCE_HOSTNAME:localhost}:${server.port}:${random.uuid}            # Уникальный идентификатор инстанса
+    lease-renewal-interval-in-seconds: ${EUREKA_HEARTBEAT_INTERVAL:30}                          # Частота отправки heartbeat
+    lease-expiration-duration-in-seconds: ${EUREKA_LEASE_EXPIRATION:90}                         # Время, через которое инстанс будет считаться недоступным
+    health-check-url-path: ${EUREKA_HEALTH_CHECK_PATH:/actuator/health}                         # URL для проверки состояния
+    status-page-url-path: ${EUREKA_STATUS_PAGE_PATH:/actuator/info}                             # URL страницы статуса
