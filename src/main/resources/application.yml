@@ -18,6 +18,15 @@ management:
     web:
       exposure:
         include: ${ACTUATOR_ENDPOINTS:health,info,metrics,prometheus}                           # Список доступных эндпоинтов
+  metrics:
+    tags:
+      application: ${spring.application.name}                                                   # Имя приложения для метрик
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true                                                              # Гистограмма для метрик HTTP-запросов
+  tracing:
+    sampling:
+      probability: 1.0                                                                          # Трейсинг для всех запросов
   endpoint:
     health:
       show-details: ${HEALTH_DETAILS_VISIBLE:always}                                            # Детализация информации о здоровье сервиса
