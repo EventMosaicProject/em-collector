@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+    <property name="LOG_FILE" value="${LOG_FILE:-${LOG_PATH:-${LOG_TEMP:-${java.io.tmpdir:-/tmp}}}/spring.log}"/>
+    <property name="SERVICE_NAME" value="em-collector"/>
+
+    <!-- Аппендер для вывода в JSON-формате (для Promtail) -->
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/${SERVICE_NAME}.json</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/${SERVICE_NAME}-%d{yyyy-MM-dd}.%i.json</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <fieldNames>
+                <timestamp>timestamp</timestamp>
+                <message>message</message>
+                <logger>logger</logger>
+                <thread>thread</thread>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+            <customFields>{"service":"${SERVICE_NAME}"}</customFields>
+            <includeStackTrace>true</includeStackTrace>
+            <stackTraceFieldName>stack_trace</stackTraceFieldName>
+        </encoder>
+    </appender>
+
+    <!-- Консольный аппендер для удобства разработки -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Корневой логгер -->
+    <root level="INFO">
+        <appender-ref ref="JSON_FILE" />
+        <appender-ref ref="CONSOLE" />
+    </root>
+
+    <!-- Уровень логирования для пакета приложения -->
+    <logger name="com.neighbor.eventmosaic" level="DEBUG" />
+
+    <!-- Профиль разработки (dev) -->
+    <springProfile name="dev">
+        <logger name="com.neighbor.eventmosaic" level="DEBUG"/>
+        <logger name="org.springframework" level="INFO"/>
+        <logger name="org.apache.kafka" level="INFO"/>
+    </springProfile>
+
+    <!-- Все остальные профили (не dev) -->
+    <springProfile name="!dev">
+        <logger name="com.neighbor.eventmosaic" level="INFO"/>
+        <logger name="org.springframework" level="WARN"/>
+        <logger name="org.apache.kafka" level="WARN"/>
+    </springProfile>
+</configuration> 
