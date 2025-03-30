@@ -6,6 +6,17 @@ spring:
     compose:
       enabled: ${DOCKER_COMPOSE_ENABLED:false}
 
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all                                                                               # Подтверждение всех реплик (все брокеры должны подтвердить запись сообщения)
+      properties:
+        enable.idempotence: true                                                              # Включаем идемпотентность (для предотвращения дублирования сообщений)
+        max.in.flight.requests.per.connection: 5                                              # Максимальное количество запросов в очереди на одно соединение
+        retries: 3                                                                            # Количество попыток повторной отправки сообщения в случае ошибки
+
 
 server:
   port: ${SERVER_PORT:8080}
@@ -45,3 +56,9 @@ eureka:
     lease-expiration-duration-in-seconds: ${EUREKA_LEASE_EXPIRATION:90}                         # Время, через которое инстанс будет считаться недоступным
     health-check-url-path: ${EUREKA_HEALTH_CHECK_PATH:/actuator/health}                         # URL для проверки состояния
     status-page-url-path: ${EUREKA_STATUS_PAGE_PATH:/actuator/info}                             # URL страницы статуса
+
+
+# Топики Kafka
+kafka:
+  topic:
+    raw-data: ${KAFKA_TOPIC_RAW_DATA:gdelt-raw-data-topic}
