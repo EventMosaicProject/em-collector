@@ -49,6 +49,96 @@
 *   **Ошибки Kafka:** `KafkaMessageService` управляет отправкой сообщений в Kafka и обрабатывает ошибки. Kafka-продюсер настроен на повторные попытки. Если отправка не удалась даже после повторов, статус файла в Redis остается `isSent = false`, и `FileSendRetryScheduler` попытается отправить его позже.
 *   **Общая обработка:** `GlobalExceptionHandler` перехватывает основные исключения и возвращает стандартизированные ответы для REST API. Асинхронные задачи имеют обработчик неперехваченных исключений (`AppConfig`).
 
-## Диаграмма последовательности
-![em-collector](https://github.com/user-attachments/assets/db279fa3-7775-40eb-9b6c-fa6a47c1754f)
+## Диаграмма последовательности (клик на кнопку ⟷ развернет схему)
+
+```mermaid
+sequenceDiagram
+    participant Sched as GdeltScheduler
+    participant Ctrl as GdeltController
+    participant Serv as GdeltService
+    participant Client as GdeltClient
+    participant HashStore as HashStoreService
+    participant FS as FileSystemService
+    participant EvtPub as EventPublisher
+    participant EvtList as EventListener
+    participant TopicRes as TopicResolver
+    participant StatusStore as StatusService
+    participant Kafka as Kafka
+    participant RetrySched as RetryScheduler
+
+    alt Scheduled
+        Sched->>Serv: processLatestArchives()
+    else Manual
+        Ctrl->>Serv: processLatestArchives()
+    end
+
+    Serv->>Client: getLatestArchivesList()
+    Client-->>Serv: archiveListText
+    Serv->>Serv: parse to GdeltArchiveInfo
+
+    loop Each archive
+        Serv->>HashStore: isNewOrChanged()
+        HashStore-->>Serv: needsProcessing
+        
+        alt Needs processing
+            Serv->>FS: create dirs
+            FS-->>Serv: dirs created
+            Serv->>FS: downloadFile()
+            FS-->>Serv: downloadedPath
+            Serv->>FS: calculateMd5()
+            FS-->>Serv: fileHash
+            
+            alt Hash matches
+                Serv->>FS: extractZip()
+                FS-->>Serv: extractedFiles
+                Serv->>EvtPub: publishEvent()
+                Serv->>HashStore: storeHash()
+                Serv->>FS: deleteFile()  # Добавлено удаление архива
+                FS-->>Serv: fileDeleted
+            else Hash mismatch
+                Serv->>Serv: log error
+            end
+        end
+    end
+
+    EvtList->>EvtPub: listen event
+    EvtPub-->>EvtList: ArchiveExtractedEvent
+    
+    loop Each file
+        EvtList->>TopicRes: resolveTopic()
+        TopicRes-->>EvtList: topicName
+        EvtList->>StatusStore: registerFile()
+        EvtList->>Kafka: send(filePath)
+        
+        alt Success
+            Kafka-->>EvtList: ack
+            EvtList->>StatusStore: markAsSent()
+        else Failure
+            Kafka-->>EvtList: error
+        end
+    end
+
+    RetrySched->>StatusStore: getPendingFiles()
+    StatusStore-->>RetrySched: pendingFiles
+    
+    loop Each pending file
+        RetrySched->>FS: fileExists()
+        FS-->>RetrySched: exists
+        
+        alt File exists
+            RetrySched->>TopicRes: resolveTopic()
+            TopicRes-->>RetrySched: topicName
+            RetrySched->>Kafka: retrySend()
+            
+            alt Success
+                Kafka-->>RetrySched: ack
+                RetrySched->>StatusStore: markAsSent()
+            else Failure
+                Kafka-->>RetrySched: error
+            end
+        else File missing
+            RetrySched->>RetrySched: log warning
+        end
+    end
+```
 
