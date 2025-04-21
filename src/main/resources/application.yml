@@ -6,6 +6,17 @@ spring:
     compose:
       enabled: ${DOCKER_COMPOSE_ENABLED:false}
 
+  # Конфигурация Redis
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      password: ${SPRING_DATA_REDIS_PASSWORD:passw0rd}
+      timeout: 2000
+      database: ${SPRING_DATA_REDIS_DATABASE:0}                                               # Номер БД Redis
+      client-name: ${SPRING_DATA_SERVICE_NAME:em-collector}-redis-client                      # Имя клиента для идентификации в Redis
+
+
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -58,7 +69,27 @@ eureka:
     status-page-url-path: ${EUREKA_STATUS_PAGE_PATH:/actuator/info}                             # URL страницы статуса
 
 
+gdelt:
+  client:
+    name: gdelt-client
+    retry:
+      period: ${GDELT_CLIENT_RETRY_PERIOD:1000}                                                 # Начальный интервал между попытками в мс
+      max-period: ${GDELT_CLIENT_RETRY_MAX_PERIOD:5000}                                         # Максимальный интервал между попытками в мс
+      max-attempts: ${GDELT_CLIENT_RETRY_MAX_ATTEMPTS:3}                                        # Максимальное количество попыток
+  api:
+    base-url: http://data.gdeltproject.org
+    translation-updates-path: /gdeltv2/lastupdate-translation.txt
+  storage:
+    download-dir: ${GDELT_DOWNLOAD_DIR:./data/gdelt/translation}                                # Директория для загрузки файлов
+    extract-dir: ${GDELT_EXTRACT_DIR:./data/gdelt/translation/csv}                              # Директория для распаковки файлов
+  retry:
+    interval: ${GDELT_RETRY_INTERVAL:300000}                                                    # Интервал между попытками в мс
+  check:
+    interval: ${GDELT_CHECK_INTERVAL:60000}                                                     # Интервал между проверками в мс
+
+
 # Топики Kafka
 kafka:
   topic:
-    raw-data: ${KAFKA_TOPIC_RAW_DATA:gdelt-raw-data-topic}
+    translation-export: ${KAFKA_TOPIC_TRANSLATION_EXPORT:gdelt-translation-export-topic}
+    translation-mentions: ${KAFKA_TOPIC_TRANSLATION_MENTIONS:gdelt-translation-mentions-topic}
