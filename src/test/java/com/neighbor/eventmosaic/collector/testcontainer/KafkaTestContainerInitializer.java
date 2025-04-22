@@ -16,13 +16,10 @@ public interface KafkaTestContainerInitializer {
     String SPRING_KAFKA_BOOTSTRAP_SERVERS = "spring.kafka.bootstrap-servers";
 
     @Container
-    KafkaContainer KAFKA_CONTAINER = new KafkaContainer(
-            DockerImageName.parse(DOCKER_IMAGE_NAME)
-    );
+    KafkaContainer KAFKA_CONTAINER = new KafkaContainer(DockerImageName.parse(DOCKER_IMAGE_NAME));
 
     @DynamicPropertySource
     static void registerKafkaProperties(DynamicPropertyRegistry registry) {
-        KAFKA_CONTAINER.start();
         registry.add(SPRING_KAFKA_BOOTSTRAP_SERVERS, KAFKA_CONTAINER::getBootstrapServers);
     }
 }
