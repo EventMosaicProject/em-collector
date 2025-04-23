@@ -51,6 +51,7 @@ dependencies {
     testImplementation(libs.testcontainers.core)
     testImplementation(libs.testcontainers.junit)
     testImplementation(libs.testcontainers.kafka)
+    testImplementation(libs.wiremock.standalone)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 

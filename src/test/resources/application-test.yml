@@ -1,3 +1,9 @@
+spring:
+  data:
+    redis:
+      password: ""
+
+
 eureka:
   client:
     register-with-eureka: false

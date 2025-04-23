@@ -22,6 +22,7 @@ public interface RedisTestContainerInitializer {
 
     @DynamicPropertySource
     static void registerRedisProperties(DynamicPropertyRegistry registry) {
+        REDIS_CONTAINER.start();
         registry.add(SPRING_DATA_REDIS_HOST, REDIS_CONTAINER::getHost);
         registry.add(SPRING_DATA_REDIS_PORT, REDIS_CONTAINER::getFirstMappedPort);
         registry.add(SPRING_DATA_REDIS_PASSWORD, () -> "");
