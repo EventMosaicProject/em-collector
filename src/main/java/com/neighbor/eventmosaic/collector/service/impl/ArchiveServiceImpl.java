@@ -12,7 +12,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationEventPublisherAware;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -61,7 +60,6 @@ public class ArchiveServiceImpl implements ArchiveService, ApplicationEventPubli
      * @param archive Информация об архиве для обработки
      * @return CompletableFuture с результатом обработки архива
      */
-    @Async
     @Override
     public CompletableFuture<GdeltArchiveProcessResult> processArchiveAsync(GdeltArchiveInfo archive) {
         log.info("Начало асинхронной обработки архива: {}", archive.fileName());
