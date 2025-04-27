@@ -91,5 +91,6 @@ gdelt:
 # Топики Kafka
 kafka:
   topic:
-    translation-export: ${KAFKA_TOPIC_TRANSLATION_EXPORT:gdelt-translation-export-topic}
-    translation-mentions: ${KAFKA_TOPIC_TRANSLATION_MENTIONS:gdelt-translation-mentions-topic}
+    producer:
+      collector-event: ${KAFKA_TOPIC_COLLECTOR_EVENT:gdelt-collector-event-topic}
+      collector-mention: ${KAFKA_TOPIC_MENTION:gdelt-collector-mention-topic}
