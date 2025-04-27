@@ -9,9 +9,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @Getter
 @Setter
-@ConfigurationProperties(prefix = "kafka.topic")
+@ConfigurationProperties(prefix = "kafka.topic.producer")
 public class KafkaTopicProperties {
 
-    private String translationExport;
-    private String translationMentions;
+    private String collectorEvent;
+    private String collectorMention;
 }

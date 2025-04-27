@@ -16,8 +16,8 @@ import java.util.regex.Pattern;
 @Getter
 public enum GdeltArchiveType {
 
-    TRANSLATION_EXPORT("translation\\.export\\.CSV\\.zip$", KafkaTopicProperties::getTranslationExport),
-    TRANSLATION_MENTIONS("translation\\.mentions\\.CSV\\.zip$", KafkaTopicProperties::getTranslationMentions);
+    TRANSLATION_EXPORT("translation\\.export\\.CSV\\.zip$", KafkaTopicProperties::getCollectorEvent),
+    TRANSLATION_MENTIONS("translation\\.mentions\\.CSV\\.zip$", KafkaTopicProperties::getCollectorMention);
 
     private final Pattern pattern;
     private final Function<KafkaTopicProperties, String> topicExtractor;
