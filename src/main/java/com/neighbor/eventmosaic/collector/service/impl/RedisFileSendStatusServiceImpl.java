@@ -24,7 +24,7 @@ import java.util.Set;
 public class RedisFileSendStatusServiceImpl implements FileSendStatusService {
 
     private static final String FILE_INFO_PREFIX = "gdelt:file:info:";
-    private static final Duration TTL = Duration.ofDays(7); // Время хранения статусов
+    private static final Duration TTL = Duration.ofHours(1); // Время хранения статусов
 
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;

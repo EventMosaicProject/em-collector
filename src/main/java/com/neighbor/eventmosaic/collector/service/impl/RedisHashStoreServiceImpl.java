@@ -18,7 +18,7 @@ import java.time.Duration;
 public class RedisHashStoreServiceImpl implements HashStoreService {
 
     private static final String KEY_PREFIX = "gdelt:archive:hash:";
-    private static final Duration TTL = Duration.ofDays(7);
+    private static final Duration TTL = Duration.ofHours(1);
 
     private final StringRedisTemplate redisTemplate;
 
