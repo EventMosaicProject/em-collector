@@ -62,11 +62,11 @@ eureka:
       defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULT_ZONE:http://em-discovery:8761/eureka/}   # URL-адрес реестра Eureka
   instance:
     prefer-ip-address: ${EUREKA_PREFER_IP:false}                                                # Используем хостнейм вместо IP
-    instance-id: ${EUREKA_INSTANCE_HOSTNAME:localhost}:${server.port}:${random.uuid}            # Уникальный идентификатор инстанса
+    instance-id: ${EUREKA_INSTANCE_HOSTNAME:em-collector}:${server.port}:${random.uuid}         # Уникальный идентификатор инстанса
     lease-renewal-interval-in-seconds: ${EUREKA_HEARTBEAT_INTERVAL:30}                          # Частота отправки heartbeat
     lease-expiration-duration-in-seconds: ${EUREKA_LEASE_EXPIRATION:90}                         # Время, через которое инстанс будет считаться недоступным
-    health-check-url-path: ${EUREKA_HEALTH_CHECK_PATH:/actuator/health}                         # URL для проверки состояния
-    status-page-url-path: ${EUREKA_STATUS_PAGE_PATH:/actuator/info}                             # URL страницы статуса
+    status-page-url: http://${GATEWAY_PUBLIC_HOSTNAME:localhost}:${GATEWAY_PUBLIC_PORT:8080}/collector/actuator
+    health-check-url: http://${GATEWAY_PUBLIC_HOSTNAME:localhost}:${GATEWAY_PUBLIC_PORT:8080}/collector/actuator/health
 
 
 gdelt:
@@ -81,7 +81,6 @@ gdelt:
     translation-updates-path: /gdeltv2/lastupdate-translation.txt
   storage:
     download-dir: ${GDELT_DOWNLOAD_DIR:./data/gdelt/translation}                                # Директория для загрузки файлов
-    extract-dir: ${GDELT_EXTRACT_DIR:./data/gdelt/translation/csv}                              # Директория для распаковки файлов
   retry:
     interval: ${GDELT_RETRY_INTERVAL:300000}                                                    # Интервал между попытками в мс
   check:
