@@ -9,7 +9,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,48 +34,48 @@ public class RedisFileSendStatusServiceImpl implements FileSendStatusService {
      * По-дефолту статус - не отправлен.
      *
      * @param archiveFileName имя архива
-     * @param filePath        путь к файлу
+     * @param fileUrl         путь к файлу
      * @return true, если зарегистрирован, false - если нет
      */
     @Override
-    public boolean registerFile(String archiveFileName, Path filePath) {
+    public boolean registerFile(String archiveFileName, String fileUrl) {
 
         ExtractedFileInfo extractedFileInfo = ExtractedFileInfo.builder()
                 .archiveFileName(archiveFileName)
-                .filePath(filePath.toAbsolutePath().toString())
+                .fileUrl(fileUrl)
                 .isSent(false) // начальный статус - не отправлен
                 .build();
 
-        return saveFileInfo(filePath, extractedFileInfo);
+        return saveFileInfo(fileUrl, extractedFileInfo);
     }
 
     /**
      * Отмечает файл как отправленный в топик Kafka.
      *
-     * @param filePath путь к файлу
+     * @param fileUrl путь к файлу
      * @return true, если отправлен, false - если нет
      */
     @Override
-    public boolean markAsSent(Path filePath) {
-        ExtractedFileInfo fileInfo = getFileInfo(filePath);
+    public boolean markAsSent(String fileUrl) {
+        ExtractedFileInfo fileInfo = getFileInfo(fileUrl);
         if (fileInfo == null) {
-            log.warn("Попытка отметить как доставленный незарегистрированный файл: {}", filePath);
+            log.warn("Попытка отметить как доставленный незарегистрированный файл: {}", fileUrl);
             return false;
         }
 
         fileInfo.setSent(true);
-        return saveFileInfo(filePath, fileInfo);
+        return saveFileInfo(fileUrl, fileInfo);
     }
 
     /**
      * Получает информацию о файле из Redis.
      *
-     * @param filePath путь к файлу
+     * @param fileUrl путь к файлу
      * @return информация о файле
      */
     @Override
-    public ExtractedFileInfo getFileInfo(Path filePath) {
-        String key = buildFileInfoKey(filePath);
+    public ExtractedFileInfo getFileInfo(String fileUrl) {
+        String key = buildFileInfoKey(fileUrl);
         try {
             String json = redisTemplate.opsForValue().get(key);
             if (json == null) {
@@ -84,8 +83,8 @@ public class RedisFileSendStatusServiceImpl implements FileSendStatusService {
             }
             return objectMapper.readValue(json, ExtractedFileInfo.class);
         } catch (Exception e) {
-            log.error("Ошибка при получении информации о файле {}: {}",
-                    filePath, e.getMessage(), e);
+            log.error("Ошибка при получении информации о файле из Redis. URL: {}, Ключ: {}, Ошибка: {}",
+                    fileUrl, key, e.getMessage(), e);
             return null;
         }
     }
@@ -95,8 +94,10 @@ public class RedisFileSendStatusServiceImpl implements FileSendStatusService {
      *
      * @return список ожидающих отправки файлов
      */
+    // TODO: Оптимизировать метод
     @Override
     public List<ExtractedFileInfo> getPendingFiles() {
+        log.debug("Запрос списка неотправленных файлов из Redis...");
         List<ExtractedFileInfo> pendingFiles = new ArrayList<>();
         try {
             // Получаем все ключи с префиксом
@@ -125,30 +126,36 @@ public class RedisFileSendStatusServiceImpl implements FileSendStatusService {
      * Сохраняет информацию о файле в Redis.
      * Устанавливает время жизни ключа.
      *
-     * @param filePath путь к файлу
+     * @param fileUrl  путь к файлу
      * @param fileInfo информация о файле
      * @return true, если сохранено, false - если нет
      */
-    private boolean saveFileInfo(Path filePath, ExtractedFileInfo fileInfo) {
-        String key = buildFileInfoKey(filePath);
+    private boolean saveFileInfo(String fileUrl, ExtractedFileInfo fileInfo) {
+        String key = buildFileInfoKey(fileUrl);
         try {
             String json = objectMapper.writeValueAsString(fileInfo);
             redisTemplate.opsForValue().set(key, json, TTL);
             return true;
 
         } catch (JsonProcessingException e) {
-            log.error("Ошибка сериализации информации о файле {}: {}",
-                    filePath, e.getMessage(), e);
+            log.error("Ошибка сериализации информации о файле. URL: {}, Данные: {}, Ошибка: {}",
+                    fileUrl, fileInfo, e.getMessage(), e);
             return false;
 
         } catch (Exception e) {
-            log.error("Ошибка при сохранении информации о файле {}: {}",
-                    filePath, e.getMessage(), e);
+            log.error("Ошибка при сохранении информации о файле в Redis. Ключ: {}, Ошибка: {}",
+                    key, e.getMessage(), e);
             return false;
         }
     }
 
-    private String buildFileInfoKey(Path filePath) {
-        return FILE_INFO_PREFIX + filePath.toAbsolutePath();
+    /**
+     * Строит ключ Redis для хранения информации о файле на основе его URL.
+     *
+     * @param fileUrl URL файла.
+     * @return Строка, представляющая ключ Redis.
+     */
+    private String buildFileInfoKey(String fileUrl) {
+        return FILE_INFO_PREFIX + fileUrl;
     }
 }

@@ -53,6 +53,9 @@ dependencies {
     testImplementation(libs.testcontainers.kafka)
     testImplementation(libs.wiremock.standalone)
     testRuntimeOnly(libs.junit.platform.launcher)
+
+    // MinIO
+    implementation(libs.minio.client)
 }
 
 dependencyManagement {

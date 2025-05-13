@@ -8,6 +8,7 @@ import com.neighbor.eventmosaic.collector.scheduler.GdeltScheduler;
 import com.neighbor.eventmosaic.collector.service.ArchiveService;
 import com.neighbor.eventmosaic.collector.service.FileSystemService;
 import com.neighbor.eventmosaic.collector.service.HashStoreService;
+import com.neighbor.eventmosaic.collector.service.MinioStorageService;
 import com.neighbor.eventmosaic.collector.testcontainer.RedisTestContainerInitializer;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,6 +77,9 @@ class GdeltServiceImplIntegrationTest implements RedisTestContainerInitializer {
     @MockitoSpyBean
     private HashStoreService hashStoreService;
 
+    @MockitoBean
+    private MinioStorageService mockMinioStorageService;
+
     @Autowired
     private FileSystemService fileSystemService;
 
@@ -85,13 +89,9 @@ class GdeltServiceImplIntegrationTest implements RedisTestContainerInitializer {
     @TempDir
     Path tempDownloadDir;
 
-    @TempDir
-    Path tempExtractDir;
-
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(archiveService, "downloadDir", tempDownloadDir.toString());
-        ReflectionTestUtils.setField(archiveService, "extractDir", tempExtractDir.toString());
 
         // Очищаем Redis перед каждым тестом
         Objects.requireNonNull(redisTemplate.getConnectionFactory())
@@ -158,7 +158,7 @@ class GdeltServiceImplIntegrationTest implements RedisTestContainerInitializer {
                 SIZE_2
         );
         CompletableFuture<GdeltArchiveProcessResult> successFuture = CompletableFuture.completedFuture(
-                GdeltArchiveProcessResult.success(secondArchiveInfo, List.of(Path.of("some/path")))
+                GdeltArchiveProcessResult.success(secondArchiveInfo, List.of("some/path"))
         );
 
         doReturn(failedFuture).when(archiveService).processArchiveAsync(argThat(info ->
@@ -212,7 +212,7 @@ class GdeltServiceImplIntegrationTest implements RedisTestContainerInitializer {
                 SIZE_2
         );
         CompletableFuture<GdeltArchiveProcessResult> successFuture = CompletableFuture.completedFuture(
-                GdeltArchiveProcessResult.success(secondArchiveInfo, List.of(Path.of("some/path")))
+                GdeltArchiveProcessResult.success(secondArchiveInfo, List.of("some/path"))
         );
 
         doReturn(failedFuture).when(archiveService).processArchiveAsync(argThat(info ->

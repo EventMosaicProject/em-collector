@@ -8,6 +8,7 @@ import com.neighbor.eventmosaic.collector.scheduler.GdeltScheduler;
 import com.neighbor.eventmosaic.collector.service.ArchiveService;
 import com.neighbor.eventmosaic.collector.service.FileSystemService;
 import com.neighbor.eventmosaic.collector.service.HashStoreService;
+import com.neighbor.eventmosaic.collector.service.MinioStorageService;
 import com.neighbor.eventmosaic.collector.testcontainer.RedisTestContainerInitializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -31,6 +33,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -40,9 +43,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Интеграционные тесты для {@link ArchiveServiceImpl}.
@@ -61,12 +67,10 @@ import static org.mockito.Mockito.verify;
 class ArchiveServiceImplIntegrationTest implements RedisTestContainerInitializer {
 
     private static final String TEST_ARCHIVE_FILENAME = "gdelt-archive.zip";
+    private static final String ACTUAL_FILENAME_IN_ARCHIVE = "20250421073000.translation.mentions.CSV";
 
     @TempDir
     Path tempDownloadDir;
-
-    @TempDir
-    Path tempExtractDir;
 
     @Autowired
     private ArchiveService archiveService;
@@ -77,8 +81,14 @@ class ArchiveServiceImplIntegrationTest implements RedisTestContainerInitializer
     @Autowired
     private FileSystemService fileSystemService;
 
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
     @MockitoBean
     private GdeltScheduler gdeltScheduler;
+
+    @MockitoBean
+    private MinioStorageService mockMinioStorageService;
 
     @Mock
     private ApplicationEventPublisher mockEventPublisher;
@@ -97,34 +107,49 @@ class ArchiveServiceImplIntegrationTest implements RedisTestContainerInitializer
         }
 
         Files.createDirectories(tempDownloadDir);
-        Files.createDirectories(tempExtractDir);
 
         Files.copy(sourceArchive, testArchivePath, StandardCopyOption.REPLACE_EXISTING);
 
         // Устанавливаем пути и подменяем публикатор событий в сервисе
         ReflectionTestUtils.setField(archiveService, "downloadDir", tempDownloadDir.toString());
-        ReflectionTestUtils.setField(archiveService, "extractDir", tempExtractDir.toString());
         ReflectionTestUtils.setField(archiveService, "eventPublisher", mockEventPublisher);
+
+        // Очищаем Redis перед каждым тестом
+        Objects.requireNonNull(redisTemplate.getConnectionFactory())
+                .getConnection()
+                .serverCommands()
+                .flushDb();
 
         String fileHash = fileSystemService.calculateMd5(testArchivePath);
         testArchiveInfo = new GdeltArchiveInfo(
                 TEST_ARCHIVE_FILENAME,
-                "file://" + testArchivePath.toAbsolutePath(),
+                "file://" + testArchivePath.toAbsolutePath(), // Для локального скачивания в тесте
                 fileHash,
                 Files.size(testArchivePath)
         );
     }
 
     @Test
-    @DisplayName("При успешной обработке архива должны извлечься файлы и опубликоваться событие")
-    void processArchiveAsync_SuccessfulProcessing_ShouldExtractFilesAndPublishEvent() throws Exception {
+    @DisplayName("При успешной обработке архива должны извлечься файлы, загрузиться в MinIO и опубликоваться событие с URL")
+    void processArchiveAsync_SuccessfulProcessing_ShouldExtractUploadAndPublishEventWithUrls() throws Exception {
+        // Arrange
+        String expectedFileUrl = "http://minio-test-host/test-bucket/" + ACTUAL_FILENAME_IN_ARCHIVE;
+
+        when(mockMinioStorageService.uploadFile(anyString(), any(Path.class)))
+                .thenReturn(expectedFileUrl);
+
         // Act
         CompletableFuture<GdeltArchiveProcessResult> future = archiveService.processArchiveAsync(testArchiveInfo);
         GdeltArchiveProcessResult result = future.get(10, TimeUnit.SECONDS);
 
         // Assert
         assertTrue(result.isSuccess(), "Результат обработки должен быть успешным");
-        assertThat(result.extractedFiles()).isNotEmpty();
+        assertThat(result.extractedFiles())
+                .hasSize(1)
+                .containsExactly(expectedFileUrl);
+
+        verify(mockMinioStorageService, times(1))
+                .uploadFile(eq(ACTUAL_FILENAME_IN_ARCHIVE), any(Path.class));
 
         ArgumentCaptor<ArchiveExtractedEvent> eventCaptor = ArgumentCaptor.forClass(ArchiveExtractedEvent.class);
         verify(mockEventPublisher, times(1)).publishEvent(eventCaptor.capture());
@@ -138,15 +163,11 @@ class ArchiveServiceImplIntegrationTest implements RedisTestContainerInitializer
         assertEquals(testArchiveInfo.hash(), storedHash, "Хеш должен быть сохранен в Redis");
 
         assertFalse(Files.exists(testArchivePath), "Исходный архив должен быть удален");
-
-        assertThat(result.extractedFiles())
-                .isNotEmpty()
-                .allMatch(Files::exists, "Все распакованные файлы должны существовать");
     }
 
     @Test
-    @DisplayName("При некорректном хеше должна возвращаться ошибка и не должно публиковаться событие")
-    void processArchiveAsync_InvalidHash_ShouldReturnFailure() throws Exception {
+    @DisplayName("При некорректном хеше должна возвращаться ошибка, файлы не должны загружаться в MinIO и не должно публиковаться событие")
+    void processArchiveAsync_InvalidHash_ShouldReturnFailureAndNotInteractWithMinio() throws Exception {
         // Arrange
         GdeltArchiveInfo archiveWithInvalidHash = new GdeltArchiveInfo(
                 testArchiveInfo.fileName(),
@@ -163,6 +184,9 @@ class ArchiveServiceImplIntegrationTest implements RedisTestContainerInitializer
         assertFalse(result.isSuccess(), "Результат обработки должен быть неуспешным");
         assertTrue(result.errorMessage().contains("не совпадает"),
                 "Сообщение об ошибке должно содержать информацию о несовпадении хеша");
+
+        verify(mockMinioStorageService, never()).uploadFile(anyString(), any(Path.class));
+        verify(mockMinioStorageService, never()).deleteObject(anyString());
 
         String storedHash = hashStoreService.getStoredHash(testArchiveInfo.fileName());
         assertNull(storedHash, "Хеш не должен быть сохранен в Redis");

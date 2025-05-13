@@ -9,13 +9,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 /**
- * Планировщик повторной отправки файлов, которые не были успешно отправлены в Kafka.
+ * Планировщик повторной отправки URL файлов, которые не были успешно отправлены в Kafka.
  */
 @Slf4j
 @Component
@@ -27,12 +24,10 @@ public class FileSendRetryScheduler {
     private final GdeltTopicResolver topicResolver;
 
     /**
-     * Запускается по расписанию для повторной отправки файлов.
-     * Что делает:
-     * 1. Получает список файлов для повторной отправки из Redis.
-     * 2. Проверяет, существует ли файл.
-     * 3. Определяет топик Kafka, в который будет отправлен файл.
-     * 4. Повторно отправляет файл в Kafka.
+     * Запускается по расписанию для повторной отправки URL файлов в Kafka.
+     * 1. Получает из {@link FileSendStatusService} список файлов (по их URL), ожидающих отправки.
+     * 2. Для каждого файла определяет топик Kafka.
+     * 3. Повторно инициирует отправку URL файла в Kafka через {@link KafkaMessageService}.
      */
     @Scheduled(fixedDelayString = "${gdelt.retry.interval}")
     public void retryPendingFiles() {
@@ -42,17 +37,12 @@ public class FileSendRetryScheduler {
         log.info("Найдено файлов для повторной отправки: {}", pendingFiles.size());
 
         pendingFiles.forEach(fileInfo -> {
-            Path filePath = Paths.get(fileInfo.getFilePath());
-
-            if (!Files.exists(filePath)) {
-                log.warn("Файл не существует, пропускаем: {}", fileInfo.getFilePath());
-                return;
-            }
+            String fileUrl = fileInfo.getFileUrl();
 
             String topic = topicResolver.resolveTopic(fileInfo.getArchiveFileName());
-            log.info("Повторная отправка файла {} в топик {}", filePath, topic);
+            log.info("Повторная отправка файла {} в топик {}", fileUrl, topic);
 
-            kafkaMessageService.sendFilePathToKafka(topic, filePath);
+            kafkaMessageService.sendFilePathToKafka(topic, fileUrl);
         });
     }
 }

@@ -14,6 +14,9 @@ lombok = "1.18.38"
 testcontainers = "1.20.6"
 wiremock = "3.0.1"
 
+# MinIO
+minio = "8.5.17"
+
 [libraries]
 # Spring Boot
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
@@ -43,6 +46,9 @@ testcontainers-junit = { module = "org.testcontainers:junit-jupiter", version.re
 testcontainers-kafka = { module = "org.testcontainers:kafka", version.ref = "testcontainers" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 wiremock-standalone = { module = "com.github.tomakehurst:wiremock-standalone", version.ref = "wiremock" }
+
+# MinIO
+minio-client = { module = "io.minio:minio", version.ref = "minio" }
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
