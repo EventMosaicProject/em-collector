@@ -42,7 +42,7 @@ public class FileSendRetryScheduler {
             String topic = topicResolver.resolveTopic(fileInfo.getArchiveFileName());
             log.info("Повторная отправка файла {} в топик {}", fileUrl, topic);
 
-            kafkaMessageService.sendFilePathToKafka(topic, fileUrl);
+            kafkaMessageService.sendUrlToKafka(topic, fileUrl);
         });
     }
 }

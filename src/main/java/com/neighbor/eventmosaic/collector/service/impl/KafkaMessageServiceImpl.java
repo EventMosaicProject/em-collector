@@ -32,8 +32,8 @@ public class KafkaMessageServiceImpl implements KafkaMessageService {
      * @return CompletableFuture, который завершается, когда сообщение подтверждено Kafka
      */
     @Override
-    public CompletableFuture<Void> sendFilePathToKafka(String topic,
-                                                       String fileUrl) {
+    public CompletableFuture<Void> sendUrlToKafka(String topic,
+                                                  String fileUrl) {
 
         CompletableFuture<Void> resultFuture = new CompletableFuture<>();
 

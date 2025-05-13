@@ -12,5 +12,5 @@ public interface KafkaMessageService {
      * Отправляет URL файла в указанный топик Kafka.
      * После успешной отправки файл помечается как отправленный в сервисе отслеживания.
      */
-    CompletableFuture<Void> sendFilePathToKafka(String topic, String fileUrl);
+    CompletableFuture<Void> sendUrlToKafka(String topic, String fileUrl);
 }
