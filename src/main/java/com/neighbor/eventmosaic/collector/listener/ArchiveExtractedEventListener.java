@@ -39,7 +39,7 @@ public class ArchiveExtractedEventListener {
 
         event.extractedFiles().forEach(filePath -> {
             sendStatusService.registerFile(archiveFileName, filePath);
-            kafkaMessageService.sendFilePathToKafka(topic, filePath);
+            kafkaMessageService.sendUrlToKafka(topic, filePath);
         });
 
         log.info("Обработка события завершена.");
