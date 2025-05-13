@@ -21,9 +21,9 @@ public class ExtractedFileInfo {
     private String archiveFileName;
 
     /**
-     * Абсолютный путь к распакованному файлу.
+     * URL файла в хранилище.
      */
-    private String filePath;
+    private String fileUrl;
 
     /**
      * Статус отправки файла.

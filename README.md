@@ -1,6 +1,6 @@
 # Сервис сбора данных (em-collector)
 
-Микросервис `em-collector` отвечает за автоматическое получение, обработку и передачу информации о файлах данных из внешнего источника. Он регулярно проверяет наличие новых или обновленных архивов данных, загружает их, распаковывает и отправляет пути к извлеченным CSV-файлам в соответствующие топики Apache Kafka для дальнейшей обработки другими сервисами.
+Микросервис `em-collector` отвечает за автоматическое получение, обработку и передачу информации о файлах данных из внешнего источника. Он регулярно проверяет наличие новых или обновленных архивов данных, загружает их, распаковывает, **сохраняет в S3-совместимое хранилище MinIO** и отправляет **URL-адреса** к этим файлам в соответствующие топики Apache Kafka для дальнейшей обработки другими сервисами.
 
 ## Основной рабочий процесс
 
@@ -18,36 +18,29 @@
 
 4.  **Загрузка и обработка архивов (асинхронно):**
     *   Архивы, которые определены как новые или измененные, обрабатываются асинхронно (с использованием `Executor` на базе виртуальных потоков, настроенного в `AppConfig`).
-    *   Для каждого такого архива:
-        *   **Создание директорий:** Сервис (`GdeltService`) через `FileSystemService` проверяет и при необходимости создает директории для загрузки (`gdelt.storage.download-dir`) и распаковки (`gdelt.storage.extract-dir`) файлов.
-        *   **Загрузка:** Архив загружается по URL с помощью `FileSystemService.downloadFile()`, который использует `java.net.http.HttpClient` для потоковой загрузки.
-        *   **Проверка целостности:** После загрузки `FileSystemService.calculateMd5()` вычисляет MD5-хеш скачанного файла. Этот хеш и размер файла сравниваются с ожидаемыми значениями из `GdeltArchiveInfo`. Если они не совпадают, процесс для этого архива завершается с ошибкой.
-        *   **Распаковка:** Если проверка прошла успешно, `FileSystemService.extractZipFile()` распаковывает содержимое ZIP-архива в целевую директорию (`gdelt.storage.extract-dir`). Этот метод включает защиту от уязвимости "Zip Slip".
-        *   **Публикация события:** При успешной распаковке `GdeltService` публикует событие `ArchiveExtractedEvent`, содержащее информацию об исходном архиве (`GdeltArchiveInfo`) и список путей к извлеченным файлам (`List<Path>`).
+    *   Для каждого такого архива (`ArchiveServiceImpl`):
+        *   **Создание директории для загрузки:** Сервис проверяет и при необходимости создает директорию для загрузки (`gdelt.storage.download-dir`).
+        *   **Загрузка архива:** Архив загружается по URL с помощью `FileSystemService.downloadFile()`.
+        *   **Проверка целостности:** После загрузки `FileSystemService.calculateMd5()` вычисляет MD5-хеш скачанного файла. Этот хеш сравнивается с ожидаемым. Если они не совпадают, процесс для этого архива завершается с ошибкой.
+        *   **Распаковка во временную директорию:** Если проверка прошла успешно, `FileSystemService.extractZipFile()` распаковывает содержимое ZIP-архива во *временную локальную директорию*. Этот метод включает защиту от уязвимости "Zip Slip".
+        *   **Загрузка в MinIO:** Каждый извлеченный файл загружается в S3-совместимое хранилище MinIO с помощью `MinioStorageService`. Сервис возвращает URL для каждого загруженного файла.
+        *   **Публикация события:** При успешной загрузке всех файлов из архива в MinIO, публикуется событие `ArchiveExtractedEvent`, содержащее информацию об исходном архиве (`GdeltArchiveInfo`) и список **URL-адресов** к загруженным в MinIO файлам (`List<String>`).
         *   **Обновление хеша:** Новый MD5-хеш успешно обработанного архива сохраняется в Redis через `HashStoreService.storeHash()`.
-        *   **Очистка:** Загруженный ZIP-архив удаляется после успешной распаковки.
+        *   **Очистка:** Загруженный ZIP-архив и *временные локальные распакованные файлы* удаляются после успешной обработки.
 
 5.  **Обработка события распаковки (асинхронно):**
     *   `ArchiveExtractedEventListener` асинхронно обрабатывает событие `ArchiveExtractedEvent`.
-    *   Для каждого извлеченного файла (`Path`) из события:
-        *   **Определение топика Kafka:** `GdeltTopicResolver` определяет целевой топик Kafka на основе имени исходного архива (используя `GdeltArchiveType` и `KafkaTopicProperties`). Например, файлы из архивов `*.translation.export.CSV.zip` пойдут в один топик, а из `*.translation.mentions.CSV.zip` — в другой.
-        *   **Регистрация статуса отправки:** `FileSendStatusService` (реализация `RedisFileSendStatusServiceImpl`) регистрирует информацию об извлеченном файле в Redis (ключ `gdelt:file:info:{absoluteFilePath}`). Создается запись `ExtractedFileInfo` со статусом `isSent = false`. Эта запись имеет TTL (`7 дней` по умолчанию).
-        *   **Отправка в Kafka:** Слушатель использует `KafkaMessageService` для отправки сообщения в определенный топик. Сообщение содержит **абсолютный путь** к извлеченному CSV-файлу в виде строки. Сервис инкапсулирует работу с `KafkaTemplate` и отслеживает результат отправки. Kafka-продюсер настроен на идемпотентность и повторные попытки.
-        *   **Обновление статуса:** При получении подтверждения (ACK) от Kafka об успешной отправке сообщения, слушатель вызывает `FileSendStatusService.markAsSent()`, который обновляет статус файла в Redis на `isSent = true`. Если отправка не удалась, статус остается `false`.
+    *   Для каждого **URL извлеченного файла** (`String`) из события:
+        *   **Определение топика Kafka:** `GdeltTopicResolver` определяет целевой топик Kafka на основе имени исходного архива.
+        *   **Регистрация статуса отправки:** `FileSendStatusService` (реализация `RedisFileSendStatusServiceImpl`) регистрирует информацию о файле (используя его URL) в Redis (например, ключ `gdelt:file:url:{fileUrl}`). Создается запись `ExtractedFileInfo` со статусом `isSent = false`. Эта запись имеет TTL.
+        *   **Отправка в Kafka:** Слушатель использует `KafkaMessageService` для отправки сообщения в определенный топик. Сообщение содержит **URL файла** в MinIO.
+        *   **Обновление статуса:** При получении подтверждения от Kafka об успешной отправке, `FileSendStatusService.markAsSent()` (вызываемый из `KafkaMessageService`) обновляет статус файла в Redis на `isSent = true` (используя URL файла).
 
 6.  **Механизм повторной отправки в Kafka:**
-    *   `FileSendRetryScheduler` запускается по расписанию (`gdelt.retry.interval`, по умолчанию `5 минут`).
-    *   Он запрашивает у `FileSendStatusService` список всех файлов, у которых статус `isSent = false`.
-    *   Для каждого такого файла планировщик проверяет, существует ли он еще на диске.
-    *   Если файл существует, планировщик определяет нужный топик Kafka (через `GdeltTopicResolver`) и использует `KafkaMessageService` для повторной отправки пути к файлу в Kafka.
+    *   `FileSendRetryScheduler` запускается по расписанию (`gdelt.retry.interval`).
+    *   Он запрашивает у `FileSendStatusService` список всех файлов (по их URL), у которых статус `isSent = false`.
+    *   Для каждого такого файла (представленного его URL) планировщик определяет нужный топик Kafka и использует `KafkaMessageService` для повторной отправки **URL файла** в Kafka.
     *   `KafkaMessageService` автоматически обновляет статус файла на `isSent = true` через `FileSendStatusService` в случае успешной отправки.
-
-## Обработка ошибок
-
-*   **Сетевые ошибки:** Feign-клиент (`GdeltClient`) использует настроенный `Retryer` для повторных попыток при запросе списка архивов. Загрузка файлов (`HttpClient`) может выбросить `IOException`.
-*   **Ошибки обработки:** Несоответствие хеша или размера файла, ошибки распаковки архива (`IOException`), ошибки при работе с Redis или Kafka логируются. Ошибки на уровне обработки GDELT могут приводить к выбрасыванию `GdeltProcessingException`.
-*   **Ошибки Kafka:** `KafkaMessageService` управляет отправкой сообщений в Kafka и обрабатывает ошибки. Kafka-продюсер настроен на повторные попытки. Если отправка не удалась даже после повторов, статус файла в Redis остается `isSent = false`, и `FileSendRetryScheduler` попытается отправить его позже.
-*   **Общая обработка:** `GlobalExceptionHandler` перехватывает основные исключения и возвращает стандартизированные ответы для REST API. Асинхронные задачи имеют обработчик неперехваченных исключений (`AppConfig`).
 
 ## Диаграмма последовательности (клик на кнопку ⟷ развернет схему)
 
@@ -55,10 +48,12 @@
 sequenceDiagram
     participant Sched as GdeltScheduler
     participant Ctrl as GdeltController
-    participant Serv as GdeltService
+    participant GServ as GdeltService
+    participant ArchServ as ArchiveService
     participant Client as GdeltClient
     participant HashStore as HashStoreService
     participant FS as FileSystemService
+    participant Minio as MinioStorageService
     participant EvtPub as EventPublisher
     participant EvtList as EventListener
     participant TopicRes as TopicResolver
@@ -66,78 +61,81 @@ sequenceDiagram
     participant Kafka as Kafka
     participant RetrySched as RetryScheduler
 
-    alt Scheduled
-        Sched->>Serv: processLatestArchives()
-    else Manual
-        Ctrl->>Serv: processLatestArchives()
+    alt Запуск по расписанию
+        Sched->>GServ: processLatestArchives()
+    else Ручной запуск
+        Ctrl->>GServ: processLatestArchives()
     end
 
-    Serv->>Client: getLatestArchivesList()
-    Client-->>Serv: archiveListText
-    Serv->>Serv: parse to GdeltArchiveInfo
+    GServ->>Client: getLatestArchivesList()
+    Client-->>GServ: archiveListText (список архивов в текстовом виде)
+    GServ->>GServ: parse to GdeltArchiveInfo (парсинг в объекты)
 
-    loop Each archive
-        Serv->>HashStore: isNewOrChanged()
-        HashStore-->>Serv: needsProcessing
+    loop Для каждого архива в списке
+        GServ->>HashStore: isNewOrChanged(имя_архива, хеш_архива)
+        HashStore-->>GServ: needsProcessing (флаг, нужна ли обработка)
         
-        alt Needs processing
-            Serv->>FS: create dirs
-            FS-->>Serv: dirs created
-            Serv->>FS: downloadFile()
-            FS-->>Serv: downloadedPath
-            Serv->>FS: calculateMd5()
-            FS-->>Serv: fileHash
+        alt Архив новый или изменен
+            GServ->>ArchServ: processArchiveAsync(archiveInfo) # Делегирование обработки ArchServ
             
-            alt Hash matches
-                Serv->>FS: extractZip()
-                FS-->>Serv: extractedFiles
-                Serv->>EvtPub: publishEvent()
-                Serv->>HashStore: storeHash()
-                Serv->>FS: deleteFile()  # Добавлено удаление архива
-                FS-->>Serv: fileDeleted
-            else Hash mismatch
-                Serv->>Serv: log error
+            ArchServ->>FS: checkAndCreateDirectory(downloadDir) # Проверка/создание папки загрузки
+            ArchServ->>FS: downloadFile(url, targetPath) # Загрузка архива
+            FS-->>ArchServ: downloadedArchivePath (путь к скачанному архиву)
+            ArchServ->>FS: calculateMd5(downloadedArchivePath) # Расчет хеша скачанного архива
+            FS-->>ArchServ: fileHash (рассчитанный хеш)
+            
+            alt Хеш совпадает
+                ArchServ->>FS: extractZipFile(archivePath, tempExtractDir) # Распаковка во временную папку
+                FS-->>ArchServ: localExtractedPaths (список путей к локальным распакованным файлам)
+                
+                loop Для каждого локально распакованного файла
+                    ArchServ->>Minio: uploadFile(objectName, localPath) # Загрузка файла в MinIO
+                    Minio-->>ArchServ: fileUrl (URL файла в MinIO)
+                    ArchServ->>FS: deleteLocalFile(localPath) # Удаление временного локального файла
+                end
+                
+                ArchServ->>EvtPub: publishEvent(ArchiveExtractedEvent with fileUrls) # Публикация события с URL файлов
+                ArchServ->>HashStore: storeHash(archiveName, newHash) # Сохранение нового хеша в Redis
+                ArchServ->>FS: deleteFile(downloadedArchivePath) # Удаление скачанного ZIP-архива
+            else Хеш не совпадает
+                ArchServ->>ArchServ: log error, return failure (логирование ошибки, возврат неудачи)
             end
+            ArchServ-->>GServ: archiveProcessResult (результат обработки архива)
         end
     end
 
-    EvtList->>EvtPub: listen event
-    EvtPub-->>EvtList: ArchiveExtractedEvent
+    EvtList->>EvtPub: listen event (подписка на событие)
+    EvtPub-->>EvtList: ArchiveExtractedEvent (содержит fileUrls)
     
-    loop Each file
-        EvtList->>TopicRes: resolveTopic()
-        TopicRes-->>EvtList: topicName
-        EvtList->>StatusStore: registerFile()
-        EvtList->>Kafka: send(filePath)
+    loop Для каждого fileUrl из события
+        EvtList->>TopicRes: resolveTopic(archiveFileName) # Определение топика Kafka
+        TopicRes-->>EvtList: topicName (имя топика)
+        EvtList->>StatusStore: registerFile(archiveFileName, fileUrl) # Регистрация файла для отслеживания
+        EvtList->>Kafka: send(topicName, fileUrl) # Отправка URL файла в Kafka
         
-        alt Success
-            Kafka-->>EvtList: ack
-            EvtList->>StatusStore: markAsSent()
-        else Failure
-            Kafka-->>EvtList: error
+        alt Успешная отправка (Kafka ACK)
+            Kafka-->>EvtList: ack (подтверждение, через колбэк KafkaMessageService)
+            EvtList->>StatusStore: markAsSent(fileUrl) # Обновление статуса на "отправлен" (неявно через KafkaMessageService)
+        else Ошибка отправки
+            Kafka-->>EvtList: error (ошибка, через колбэк KafkaMessageService)
+            # StatusStore: статус файла остается "не отправлен"
         end
     end
 
-    RetrySched->>StatusStore: getPendingFiles()
-    StatusStore-->>RetrySched: pendingFiles
+    RetrySched->>StatusStore: getPendingFiles() # Запрос списка неотправленных файлов
+    StatusStore-->>RetrySched: pendingFileInfos (информация о файлах, содержит fileUrls)
     
-    loop Each pending file
-        RetrySched->>FS: fileExists()
-        FS-->>RetrySched: exists
-        
-        alt File exists
-            RetrySched->>TopicRes: resolveTopic()
-            TopicRes-->>RetrySched: topicName
-            RetrySched->>Kafka: retrySend()
+    loop Для каждого неотправленного файла (pendingFileInfo)
+        RetrySched->>TopicRes: resolveTopic(archiveFileName) # Определение топика
+        TopicRes-->>RetrySched: topicName (имя топика)
+        RetrySched->>Kafka: send(topicName, fileUrl) # Повторная отправка URL в Kafka
             
-            alt Success
-                Kafka-->>RetrySched: ack
-                RetrySched->>StatusStore: markAsSent()
-            else Failure
-                Kafka-->>RetrySched: error
-            end
-        else File missing
-            RetrySched->>RetrySched: log warning
+        alt Успешная отправка (Kafka ACK)
+            Kafka-->>RetrySched: ack (подтверждение, через колбэк KafkaMessageService)
+            RetrySched->>StatusStore: markAsSent(fileUrl) # Обновление статуса (неявно через KafkaMessageService)
+        else Ошибка отправки
+            Kafka-->>RetrySched: error (ошибка, через колбэк KafkaMessageService)
+            # StatusStore: статус файла остается "не отправлен"
         end
     end
 ```
